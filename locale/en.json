@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workspace Lock",
+    "description": "Password-locks workspace folders: sessions in a locked workspace are blocked by a lock screen, session rows show a lock badge, with QQ email recovery and idle auto-lock."
+  }
+}

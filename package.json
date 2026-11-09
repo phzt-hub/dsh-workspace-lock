@@ -1,0 +1,56 @@
+{
+  "name": "dsh-workspace-lock",
+  "version": "0.2.0",
+  "type": "module",
+  "private": false,
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "description": "给工作区文件夹加密码锁：锁定后该文件夹在侧栏收起、里面的会话全部隐藏，支持 QQ 邮箱找回密码。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "workspace",
+    "lock",
+    "password"
+  ],
+  "homepage": "https://github.com/sgeerwang-hub/dsh-workspace-lock#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgeerwang-hub/dsh-workspace-lock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sgeerwang-hub/dsh-workspace-lock/issues"
+  },
+  "author": "sgeerwang-hub",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "lib/index.js",
+    "client/index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  }
+}

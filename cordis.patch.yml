@@ -1,0 +1,5 @@
+# dsh-workspace-lock 作为 profile bundle 的挂载层。
+# 行 id 与 client/index.js 注册的 sidebar.panellist / main 面板 key 一致。
+- insert:
+    - id: dsh-workspace-lock
+      name: 'dsh-workspace-lock'
