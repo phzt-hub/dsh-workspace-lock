@@ -13,7 +13,7 @@
 dsh plugin --profile web add dsh-workspace-lock
 
 # 或者直接从 GitHub 源码安装
-dsh plugin --profile web add github:sgeerwang-hub/dsh-workspace-lock
+dsh plugin --profile web add github:phzt-hub/dsh-workspace-lock
 ```
 
 装完**重启 `dsh web`**：宿主端代码要重启才生效（浏览器端模块会热替换）。重启后左侧侧栏出现锁图标，点开就是「工作区锁」面板。

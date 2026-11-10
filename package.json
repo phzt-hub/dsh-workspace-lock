@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-lock",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "private": false,
   "main": "lib/index.js",
@@ -20,15 +20,15 @@
     "lock",
     "password"
   ],
-  "homepage": "https://github.com/sgeerwang-hub/dsh-workspace-lock#readme",
+  "homepage": "https://github.com/phzt-hub/dsh-workspace-lock#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sgeerwang-hub/dsh-workspace-lock.git"
+    "url": "git+https://github.com/phzt-hub/dsh-workspace-lock.git"
   },
   "bugs": {
-    "url": "https://github.com/sgeerwang-hub/dsh-workspace-lock/issues"
+    "url": "https://github.com/phzt-hub/dsh-workspace-lock/issues"
   },
-  "author": "sgeerwang-hub",
+  "author": "phzt-hub",
   "license": "MIT",
   "engines": {
     "node": ">=20"
