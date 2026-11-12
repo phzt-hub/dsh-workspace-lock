@@ -1,6 +1,6 @@
 # dsh-workspace-lock
 
-[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/sgeerwang-hub/dsh-workspace-lock)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/phzt-hub/dsh-workspace-lock)
 
 给 DSH 的工作区文件夹加一道**界面密码锁**。锁定的是**整个文件夹**：一锁上，侧栏里这个文件夹立刻收起，里面的会话行整批收掉——看不见、点不开，也没有一次一次弹密码页的逐个会话锁。锁/解锁都在「工作区锁」面板里做；默认 15 分钟无操作自动重新上锁（面板里可改，0 = 不自动锁）；忘记密码可以用 QQ 邮箱收验证码重置。
 
