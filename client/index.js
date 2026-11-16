@@ -96,6 +96,10 @@ window.__ModuleLoader__.load({
       gateResetAndEnter: '重置密码并解锁',
       gateBackToPassword: '返回输密码',
       folderLockedHint: '已锁定 · 在「工作区锁」面板里解锁',
+      unlockTitle: '解锁这个文件夹',
+      unlockAttempts: '还可以试 {n} 次',
+      unlockCooldown: '{n} 秒后才能再试',
+      unlockToPanel: '忘记密码？去工作区锁面板',
       errBadRequest: '请求格式不对',
       errBadPassword: '密码不对',
       errPasswordRequired: '先设置总密码，才能锁定文件夹',
@@ -184,6 +188,10 @@ window.__ModuleLoader__.load({
       gateResetAndEnter: 'Reset and unlock',
       gateBackToPassword: 'Back to password',
       folderLockedHint: 'Locked · unlock it in the Workspace lock panel',
+      unlockTitle: 'Unlock this folder',
+      unlockAttempts: '{n} tries left',
+      unlockCooldown: 'Too many attempts — try again in {n}s',
+      unlockToPanel: 'Forgot it? Open the Workspace lock panel',
       errBadRequest: 'Malformed request',
       errBadPassword: 'Wrong password',
       errPasswordRequired: 'Set the shared password before locking a folder',
@@ -217,6 +225,7 @@ window.__ModuleLoader__.load({
       unlockedPaths: [],
       hiddenSessionIds: [],
       lockedWorkspaceIds: [],
+      lockedWorkspacePaths: [],
       email: '',
       emailConfigured: false,
       activeSessionId: null,
@@ -360,7 +369,7 @@ window.__ModuleLoader__.load({
     const ROW_SELECTOR = '[role="treeitem"][data-row-key^="workspace:"]'
 
     let hideSignature = ''
-    let lockedGroups = new Set()
+    let lockedGroups = new Map()
     let collapseGuard = new Map()
     let collapseInFlight = false
     let syncFrame = 0
@@ -369,7 +378,12 @@ window.__ModuleLoader__.load({
 
     function sidebarTargets() {
       const ids = (snap.hiddenSessionIds || []).map(String)
-      const groups = new Set((snap.lockedWorkspaceIds || []).map(String))
+      const groupIds = (snap.lockedWorkspaceIds || []).map(String)
+      const groupPaths = (snap.lockedWorkspacePaths || []).map(String)
+      const groups = new Map()
+      for (let index = 0; index < groupIds.length; index += 1) {
+        groups.set(groupIds[index], groupPaths[index] || '')
+      }
       return { groups, ids }
     }
 
@@ -426,6 +440,7 @@ window.__ModuleLoader__.load({
     function syncSidebar() {
       const { groups, ids } = sidebarTargets()
       lockedGroups = groups
+      if (popover !== null && !lockedGroups.has(popover.key)) closePopover()
       applyRowStyle(ids)
       collapseLocked()
     }
@@ -438,13 +453,13 @@ window.__ModuleLoader__.load({
       })
     }
 
-    function showHint(row) {
+    function showToast(row, text) {
       const old = document.getElementById(HINT_ID)
       if (old) old.remove()
       const box = document.createElement('div')
       box.id = HINT_ID
       box.setAttribute('role', 'status')
-      box.textContent = t('folderLockedHint')
+      box.textContent = text
       const rect = row.getBoundingClientRect()
       box.style.cssText = [
         'position:fixed',
@@ -465,6 +480,343 @@ window.__ModuleLoader__.load({
       window.setTimeout(() => box.remove(), 2600)
     }
 
+    // 点已锁定的文件夹就地弹一个小气泡收密码。气泡挂在 body 上（侧栏自己有
+    // overflow，挂在行里面会被裁掉），位置每次打开、滚动、改窗口大小都跟着
+    // 那一行重算；错满三次关掉气泡并压 30 秒，期间再点只出一句提示。
+    const POPOVER_ID = 'ws-lock-unlock-popover'
+    const POPOVER_EDGE = '1px solid var(--dsw-alias-border-subtle,rgba(255,255,255,.16))'
+    const UNLOCK_ATTEMPT_LIMIT = 3
+    const UNLOCK_COOLDOWN_MS = 30_000
+
+    let popover = null
+    const unlockCooldown = new Map()
+
+    function buttonCss(primary) {
+      return [
+        'font:inherit',
+        'font-size:12px',
+        'line-height:1.5',
+        'padding:4px 12px',
+        'border-radius:999px',
+        'white-space:nowrap',
+        'cursor:pointer',
+        primary
+          ? 'border:1px solid transparent'
+          : 'border:1px solid var(--dsw-alias-border-l2)',
+        primary
+          ? 'background:var(--dsw-alias-button-primary-fill)'
+          : 'background:transparent',
+        primary
+          ? 'color:var(--dsw-alias-label-primary-foreground)'
+          : 'color:var(--dsw-alias-label-primary)',
+      ].join(';')
+    }
+
+    function closePopover() {
+      const current = popover
+      if (current === null) return
+      popover = null
+      current.detach()
+      current.node.remove()
+    }
+
+    function openLockPanel() {
+      try {
+        layout?.selectPanel?.('ws-lock')
+      } catch {
+        /* 面板打不开就留在原地 */
+      }
+    }
+
+    function placePopover(current) {
+      const { node, row } = current
+      if (!row.isConnected) {
+        closePopover()
+        return
+      }
+      const rect = row.getBoundingClientRect()
+      const width = node.offsetWidth || 320
+      const height = node.offsetHeight || 170
+      const margin = 8
+      const left = Math.min(
+        Math.max(margin, rect.left + 6),
+        Math.max(margin, window.innerWidth - width - margin),
+      )
+      let top = rect.bottom + 6
+      let above = false
+      if (top + height > window.innerHeight - margin) {
+        const candidate = rect.top - height - 6
+        if (candidate >= margin) {
+          top = candidate
+          above = true
+        } else {
+          top = Math.max(margin, window.innerHeight - height - margin)
+        }
+      }
+      top = Math.min(Math.max(margin, top), Math.max(margin, window.innerHeight - height - margin))
+      node.style.left = `${Math.round(left)}px`
+      node.style.top = `${Math.round(top)}px`
+      const arrow = node.querySelector('[data-ws-lock-arrow]')
+      if (!(arrow instanceof HTMLElement)) return
+      const offset = Math.round(Math.min(Math.max(10, rect.left + 14 - left), width - 26))
+      arrow.style.left = `${offset}px`
+      arrow.style.top = above ? 'auto' : '-4px'
+      arrow.style.bottom = above ? '-4px' : 'auto'
+      arrow.style.borderTop = above ? '0' : POPOVER_EDGE
+      arrow.style.borderLeft = above ? '0' : POPOVER_EDGE
+      arrow.style.borderRight = above ? POPOVER_EDGE : '0'
+      arrow.style.borderBottom = above ? POPOVER_EDGE : '0'
+    }
+
+    function expandGroup(key) {
+      for (const row of folderRows()) {
+        const rowKey = String(row.getAttribute('data-row-key') ?? '').slice('workspace:'.length)
+        if (rowKey !== key) continue
+        if (row.getAttribute('aria-expanded') === 'true') return
+        collapseInFlight = true
+        try {
+          row.click()
+        } catch {
+          /* 点不动就算了，解锁本身已经生效 */
+        } finally {
+          collapseInFlight = false
+        }
+        return
+      }
+    }
+
+    function openUnlockPopover(row, key) {
+      // 气泡的节点可能被别处清掉（React 重渲染、页面清理），先把这种僵尸状态收掉
+      if (popover !== null && !popover.node.isConnected) closePopover()
+      if (popover !== null) {
+        if (popover.key === key) {
+          popover.input.focus()
+          popover.input.select()
+          return
+        }
+        closePopover()
+      }
+      const now = Date.now()
+      const until = unlockCooldown.get(key) ?? 0
+      if (until > now) {
+        showToast(row, t('unlockCooldown').replace('{n}', String(Math.ceil((until - now) / 1000))))
+        return
+      }
+      if (!snap.passwordSet) {
+        showToast(row, t('errPasswordRequired'))
+        return
+      }
+      const lockPath = lockedGroups.get(key) ?? ''
+      if (lockPath === '') {
+        showToast(row, t('folderLockedHint'))
+        return
+      }
+
+      const node = document.createElement('div')
+      node.id = POPOVER_ID
+      node.setAttribute('role', 'dialog')
+      node.setAttribute('aria-modal', 'false')
+      node.setAttribute('aria-label', t('unlockTitle'))
+      node.style.cssText = [
+        'position:fixed',
+        'z-index:2147483000',
+        'width:320px',
+        'max-width:calc(100vw - 16px)',
+        'box-sizing:border-box',
+        'padding:12px 14px 11px',
+        'border-radius:10px',
+        'font:12px/1.5 system-ui,-apple-system,sans-serif',
+        'color:var(--dsw-alias-text-primary,#fff)',
+        'background:var(--dsw-alias-bg-floating,#22262f)',
+        `border:${POPOVER_EDGE}`,
+        'box-shadow:0 12px 32px rgba(0,0,0,.34)',
+      ].join(';')
+
+      const arrow = document.createElement('div')
+      arrow.setAttribute('data-ws-lock-arrow', '1')
+      arrow.style.cssText = [
+        'position:absolute',
+        'width:8px',
+        'height:8px',
+        'border-radius:2px',
+        'transform:rotate(45deg)',
+        'background-color:inherit',
+      ].join(';')
+      node.appendChild(arrow)
+
+      const title = document.createElement('div')
+      title.textContent = t('unlockTitle')
+      title.style.cssText = 'font-size:12px;font-weight:600;margin-bottom:8px'
+      node.appendChild(title)
+
+      const input = document.createElement('input')
+      input.type = 'password'
+      input.autocomplete = 'off'
+      input.placeholder = t('unlockHint')
+      input.style.cssText = [
+        'width:100%',
+        'box-sizing:border-box',
+        'padding:6px 9px',
+        'font:inherit',
+        'border-radius:6px',
+        'outline:none',
+        'color:var(--dsw-alias-label-primary)',
+        'background:var(--dsw-alias-bg-surface,var(--dsw-alias-bg-base))',
+        'border:1px solid var(--dsw-alias-border-l2)',
+      ].join(';')
+      node.appendChild(input)
+
+      const error = document.createElement('div')
+      error.style.cssText = [
+        'display:none',
+        'margin-top:6px',
+        'font-size:11px',
+        'line-height:1.4',
+        'color:var(--dsw-alias-state-error-primary,#f87171)',
+      ].join(';')
+      node.appendChild(error)
+
+      const footer = document.createElement('div')
+      footer.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:9px'
+      node.appendChild(footer)
+
+      const submitBtn = document.createElement('button')
+      submitBtn.type = 'button'
+      submitBtn.textContent = t('confirmUnlock')
+      submitBtn.style.cssText = buttonCss(true)
+      footer.appendChild(submitBtn)
+
+      const cancelBtn = document.createElement('button')
+      cancelBtn.type = 'button'
+      cancelBtn.textContent = t('cancel')
+      cancelBtn.style.cssText = buttonCss(false)
+      footer.appendChild(cancelBtn)
+
+      const linkRow = document.createElement('div')
+      linkRow.style.cssText = 'margin-top:8px;font-size:11px;line-height:1.4'
+      node.appendChild(linkRow)
+
+      const link = document.createElement('a')
+      link.href = '#'
+      link.textContent = t('unlockToPanel')
+      link.style.cssText = [
+        'color:var(--dsw-alias-label-secondary)',
+        'text-decoration:underline',
+        'cursor:pointer',
+      ].join(';')
+      linkRow.appendChild(link)
+
+      let attempts = 0
+      let busy = false
+
+      const setError = (text) => {
+        error.textContent = text
+        error.style.display = text === '' ? 'none' : 'block'
+      }
+
+      const setBusy = (next) => {
+        busy = next
+        submitBtn.disabled = next
+        cancelBtn.disabled = next
+        submitBtn.style.opacity = next ? '.6' : '1'
+      }
+
+      const settle = (message) => {
+        attempts += 1
+        const left = UNLOCK_ATTEMPT_LIMIT - attempts
+        if (left <= 0) {
+          unlockCooldown.set(key, Date.now() + UNLOCK_COOLDOWN_MS)
+          closePopover()
+          showToast(row, t('unlockCooldown').replace('{n}', String(Math.round(UNLOCK_COOLDOWN_MS / 1000))))
+          return
+        }
+        setError(`${message} · ${t('unlockAttempts').replace('{n}', String(left))}`)
+      }
+
+      const submit = async () => {
+        if (busy) return
+        const value = input.value
+        if (value === '') {
+          input.focus()
+          return
+        }
+        setError('')
+        setBusy(true)
+        try {
+          const data = await call('/verify', { path: lockPath, password: value })
+          if (data.ok === true) {
+            unlockCooldown.delete(key)
+            touch()
+            publish({ unlockedPaths: [...snap.unlockedPaths.filter((item) => item !== lockPath), lockPath] })
+            closePopover()
+            window.requestAnimationFrame(() => expandGroup(key))
+          } else {
+            settle(errorText(data.code, data.message))
+          }
+        } catch (failure) {
+          settle(String(failure?.message ?? failure))
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      const onInputKey = (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.stopPropagation()
+          submit()
+        }
+      }
+
+      const onDocumentKey = (event) => {
+        if (event.key !== 'Escape') return
+        event.preventDefault()
+        closePopover()
+      }
+
+      const onDocumentPointer = (event) => {
+        const target = event.target
+        if (target instanceof Node && (node.contains(target) || row.contains(target))) return
+        closePopover()
+      }
+
+      const onViewport = () => {
+        if (popover === null) return
+        placePopover(popover)
+      }
+
+      input.addEventListener('keydown', onInputKey)
+      submitBtn.addEventListener('click', submit)
+      cancelBtn.addEventListener('click', closePopover)
+      link.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        closePopover()
+        openLockPanel()
+      })
+      document.addEventListener('keydown', onDocumentKey, true)
+      document.addEventListener('pointerdown', onDocumentPointer, true)
+      window.addEventListener('resize', onViewport)
+      window.addEventListener('scroll', onViewport, true)
+
+      const detach = () => {
+        document.removeEventListener('keydown', onDocumentKey, true)
+        document.removeEventListener('pointerdown', onDocumentPointer, true)
+        window.removeEventListener('resize', onViewport)
+        window.removeEventListener('scroll', onViewport, true)
+      }
+
+      try {
+        row.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      } catch {
+        /* 滚不动就按当前位置摆 */
+      }
+      document.body.appendChild(node)
+      popover = { key, row, node, input, detach }
+      placePopover(popover)
+      input.focus()
+    }
+
     function guardFolderClick(event) {
       if (collapseInFlight) return
       const target = event.target
@@ -476,7 +828,7 @@ window.__ModuleLoader__.load({
       event.preventDefault()
       event.stopPropagation()
       if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation()
-      showHint(row)
+      openUnlockPopover(row, key)
     }
 
     // -----------------------------------------------------------------------
@@ -629,14 +981,18 @@ window.__ModuleLoader__.load({
           if (lock !== null && !snap.unlockedPaths.includes(lock)) hidden.push(String(id))
         }
         const groups = []
+        const groupPaths = []
         for (const item of workspaceItems || []) {
           const lock = lockedMatch(item?.path)
-          if (lock !== null && !snap.unlockedPaths.includes(lock)) groups.push(String(item?.workspaceId ?? ''))
+          if (lock === null || snap.unlockedPaths.includes(lock)) continue
+          groups.push(String(item?.workspaceId ?? ''))
+          groupPaths.push(lock)
         }
         const sameIds = hidden.length === snap.hiddenSessionIds.length && hidden.every((id, i) => id === snap.hiddenSessionIds[i])
         const sameGroups = groups.length === snap.lockedWorkspaceIds.length && groups.every((id, i) => id === snap.lockedWorkspaceIds[i])
-        if (sameIds && sameGroups) return
-        publish({ hiddenSessionIds: hidden, lockedWorkspaceIds: groups })
+        const samePaths = groupPaths.length === snap.lockedWorkspacePaths.length && groupPaths.every((p, i) => p === snap.lockedWorkspacePaths[i])
+        if (sameIds && sameGroups && samePaths) return
+        publish({ hiddenSessionIds: hidden, lockedWorkspaceIds: groups, lockedWorkspacePaths: groupPaths })
       }, [sessionIds, sessionsById, workspaceItems, state.lockedPaths, state.unlockedPaths])
 
       return null
@@ -1524,9 +1880,11 @@ window.__ModuleLoader__.load({
           if (style) style.remove()
           const hint = document.getElementById(HINT_ID)
           if (hint) hint.remove()
+          closePopover()
+          unlockCooldown.clear()
           hideSignature = ''
           rowRoot = null
-          lockedGroups = new Set()
+          lockedGroups = new Map()
         }
       }, 'dsh-workspace-lock: sidebar collapse')
 
